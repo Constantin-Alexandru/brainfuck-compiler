@@ -1,164 +1,251 @@
-#include <stack>
-#include <string>
-#include <fstream>
-#include <string.h>
 #include <iostream>
-#include <assert.h>
-#include <stdio.h>
+#include <fstream>
+#include <cstring>
 #include <conio.h>
+#include <string>
+#include <vector>
 
 #define mem_size 30000
 
-void interpret(std::string program);
-// void compile(std::string program);
-
-const char *help();
-
-std::string getProgramFromFile(const char *filename);
+bool validFileExt(const char *filename);
+bool readProgram(const char *filename, std::string &program);
+bool isValid(std::string program);
+void debug(const char *filename, unsigned char mem_arr[], int mem_pos, std::string program, int pos);
+void interpret(const char *filename);
+void compile(const char *filename);
 
 int main(int argc, char *argv[])
 {
-  if (argc < 2)
+  if (argc < 3)
   {
-    std::cout << "Invalid number of arguments: " << argc << '\n'
-              << help();
+    std::cout << "ERROR: NOT ENOUGH ARGUMENTS\n";
     return -1;
   }
 
-  int ext_offset = strlen(argv[2]) - 3;
-
-  if (strcmp(argv[2] + ext_offset, ".bf") != 0)
+  if (std::strcmp(argv[1], "int") == 0)
   {
-    std::cout << "ERROR: invalid file " << argv[2];
-    return -1;
+    interpret(argv[2]);
+
+    return 0;
   }
 
-  std::string program = getProgramFromFile(argv[2]);
+  if (std::strcmp(argv[1], "com") == 0)
+  {
+    compile(argv[2]);
 
-  if (program == "")
-  {
-    return -1;
-  }
-
-  if (strcmp(argv[1], "int") == 0)
-  {
-    interpret(program);
-  }
-  else if (strcmp(argv[2], "com") == 0)
-  {
-    // compile(program);
-  }
-  else
-  {
-    std::cout << "Invalid command: " << argv[1] << '\n';
-    std::cout << help();
+    return 0;
   }
 
-  return 0;
+  std::cout << "ERROR: INVALID COMMAND " << argv[1] << "\nAvailable commands are:\n    - int <filename>.bf: interprets the given brainfuck file \n    - com <filename>.bf: compiles the given brainfuck file\n";
+
+  return -1;
 }
 
-const char *help()
+bool validFileExt(const char *filename)
 {
-  return "The program requires one of the following commands:\n   - int <filename> to interpret the program\n   - com <filename> to compile the program ";
+  int extStart = std::strlen(filename) - 3;
+
+  if (std::strcmp(filename + extStart, ".bf") == 0)
+    return true;
+
+  return false;
 }
 
-std::string getProgramFromFile(const char *filename)
+bool readProgram(const char *filename, std::string &program)
 {
-  std::string program;
+  if (!validFileExt(filename))
+  {
+    return false;
+  }
 
   std::ifstream in(filename);
 
   if (!in.good())
-  {
-    std::cout << "ERROR: invalid file " << filename;
-    return "";
-  }
+    return false;
 
   while (!in.eof())
   {
     std::string line;
 
-    std::getline(in, line);
+    in >> line;
 
     program += line;
   }
 
-  in.close();
-
-  return program;
+  return true;
 }
 
-void showNitems(char arr[], int size, int pos)
+bool isValid(std::string program)
 {
-  for (int i = 0; i < size; i++)
+  int openBrackets = 0;
+  int closeBrackets = 0;
+  for (int i = 0; i < program.size(); i++)
   {
-    if (i == pos)
+    if (program[i] == '[')
     {
-      std::cout << " > ";
+      openBrackets++;
     }
+    else if (program[i] == ']')
+    {
+      closeBrackets++;
+    }
+  }
 
-    std::cout << (int)arr[i] << " ";
+  return openBrackets == closeBrackets;
+}
+
+void debug(const char *filename, unsigned char mem_arr[], int mem_pos, std::string program, int pos)
+{
+
+  int startMemPos = std::max(mem_pos - 20, 0);
+
+  std::cout << filename << ":" << startMemPos << '\n';
+
+  for (int i = startMemPos; i < startMemPos + 20; i++)
+  {
+    std::cout << (int)mem_arr[i] << " ";
+  }
+
+  std::string mem_pos_arr;
+
+  std::cout << '\n';
+
+  for (int i = 0; i < 20; i++)
+  {
+    if (i == (mem_pos - startMemPos))
+    {
+      std::cout << "^ (" << mem_pos << ")";
+    }
+    else
+      std::cout << "  ";
   }
 
   std::cout << '\n';
+
+  int startProgPos = std::max(pos - 19, 0);
+
+  for (int i = startProgPos; i < startProgPos + 20; i++)
+  {
+    std::cout << program[i] << " ";
+  }
+
+  std::string prog_pos_arr;
+
+  std::cout << '\n';
+
+  for (int i = 0; i < 20; i++)
+  {
+    if (i == (pos - startProgPos))
+    {
+      std::cout << "^ ";
+    }
+    else
+      std::cout << "  ";
+  }
+
+  std::cout << '\n';
+
+  // getch();
 }
 
-void interpret(std::string program)
+void interpret(const char *filename)
 {
-  char arr[mem_size] = {0};
-  int pos = 0;
+  std::string program;
+  if (!readProgram(filename, program))
+  {
+    std::cout << "ERROR: Invalid file " << filename << '\n';
+    return;
+  }
 
-  std::stack<int> loops;
+  if (!isValid(program))
+  {
+    std::cout << "ERROR: Invalid program in file " << filename << '\n';
+    return;
+  }
 
-  int ops = 0;
+  std::vector<int> openLoops;
 
-  for (int i = 0; i < program.size(); i++)
+  unsigned char mem_arr[mem_size] = {0};
+  int mem_pos = 0;
+  int i;
+  for (i = 0; i < program.size(); i++)
   {
 
     if (program[i] == '>')
     {
-      pos++;
+      mem_pos++;
 
-      if (pos >= mem_size)
-      {
-        pos = pos - mem_size;
-      }
+      if (mem_pos >= mem_size)
+        mem_pos -= mem_size;
     }
     else if (program[i] == '<')
     {
-      pos--;
+      mem_pos--;
 
-      if (pos < 0)
+      if (mem_pos < 0)
       {
-        pos = mem_size + pos;
+        mem_pos += mem_size;
       }
     }
     else if (program[i] == '+')
     {
-      arr[pos]++;
+      mem_arr[mem_pos]++;
     }
     else if (program[i] == '-')
     {
-      arr[pos]--;
+      mem_arr[mem_pos]--;
     }
     else if (program[i] == '.')
     {
-      std::cout << arr[pos];
+      std::cout << mem_arr[mem_pos];
     }
     else if (program[i] == ',')
     {
-      arr[pos] = getch();
+      mem_arr[mem_pos] = getchar();
     }
     else if (program[i] == '[')
     {
+      if (mem_arr[mem_pos] == '\0')
+      {
+        int openCounter = 1;
+        do
+        {
+          i++;
+          if (program[i] == '[')
+          {
+            openCounter++;
+          }
+          else if (program[i] == ']')
+          {
+            openCounter--;
+          }
+        } while (openCounter != 0);
+      }
     }
     else if (program[i] == ']')
     {
-      if (loops.size() == 0)
+      if (mem_arr[mem_pos] != '\0')
       {
-        std::cout << "ERROR: Unopened loop\n";
-        return;
+        int openCounter = 0;
+
+        do
+        {
+          if (program[i] == '[')
+          {
+            openCounter++;
+          }
+          else if (program[i] == ']')
+          {
+            openCounter--;
+          }
+          i--;
+        } while (openCounter != 0);
       }
     }
   }
+}
+
+void compile(const char *filename)
+{
+  return;
 }
