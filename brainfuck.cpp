@@ -12,6 +12,8 @@ bool readProgram(const char *filename, std::string &program);
 bool isValid(std::string program);
 void debug(const char *filename, unsigned char mem_arr[], int mem_pos, std::string program, int pos);
 void interpret(const char *filename);
+void compile_windows(const char *filename, std::string program);
+void compile_linux(const char *filename, std::string program);
 void compile(const char *filename);
 
 int main(int argc, char *argv[])
@@ -245,7 +247,146 @@ void interpret(const char *filename)
   }
 }
 
+void compile_windows(const char *filename, std::string program)
+{
+  std::string file(filename);
+
+  file.pop_back();
+  file.pop_back();
+  file.pop_back();
+
+  file += ".s";
+
+  int loopCounter = 0;
+
+  std::vector<int> openLoops;
+
+  std::ofstream out(file);
+
+  out << "    .global main\n\n";
+
+  out << "    .text\n\n";
+
+  out << "main:\n\n";
+
+  out << "    # Allocating the array #\n";
+  out << "    pushq %rbp\n";
+  out << "    movq %rsp, %rbp\n";
+  out << "    subq $16, %rsp\n";
+  out << "    movl $30000, %edi\n";
+  out << "    call malloc\n";
+  out << "    movq %rax, -8(%rbp)\n";
+
+  for (int i = 0; i < program.size(); i++)
+  {
+    if (program[i] == '>')
+    {
+      out << "    addq $1, -8(%rbp)\n";
+    }
+    else if (program[i] == '<')
+    {
+      out << "    subq $1, -8(%rbp)\n";
+    }
+    else if (program[i] == '+')
+    {
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movzbl (%rax), %eax\n";
+      out << "    addl $1, %eax\n";
+      out << "    movl %eax, %edx\n";
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movb %dl, (%rax)\n";
+    }
+    else if (program[i] == '-')
+    {
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movzbl (%rax), %eax\n";
+      out << "    subl $1, %eax\n";
+      out << "    movl %eax, %edx\n";
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movb %dl, (%rax)\n";
+    }
+    else if (program[i] == '.')
+    {
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movzbl (%rax), %eax\n";
+      out << "    movsbl %bl, %eax\n";
+      out << "    movl %eax, %edi\n";
+      out << "    call putchar\n";
+    }
+    else if (program[i] == ',')
+    {
+      out << "    call getchar\n";
+      out << "    movl  %eax, %edx\n";
+      out << "    movq -8(%rbp), %rax";
+      out << "    movb %dl, (%rax)\n";
+    }
+    else if (program[i] == '[')
+    {
+
+      out << ".L" << loopCounter << ":\n";
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movzbl (%rax), %eax\n";
+      out << "    testb %al, %al\n";
+      out << "    je .L" << loopCounter << "end\n";
+
+      openLoops.push_back(loopCounter);
+
+      loopCounter++;
+    }
+    else if (program[i] == ']')
+    {
+      out << ".L" << openLoops.back() << "end:\n";
+      out << "    movq -8(%rbp), %rax\n";
+      out << "    movzbl (%rax), %eax\n";
+      out << "    testb %al, %al\n";
+      out << "    jne .L" << openLoops.back() << '\n';
+
+      openLoops.pop_back();
+    }
+  }
+
+  out << "    # Freeing the memory occupied by the array #";
+  out << "    movq -8(%rbp), %rax\n";
+  out << "    movq %rax, %rdi\n";
+  out << "    call free\n";
+
+  out.close();
+
+  std::string asCmd = "as --64 -o out.o " + file;
+
+  file.pop_back();
+  file.pop_back();
+
+  file += ".exe";
+
+  std::string gccCmd = "g++ -o " + file + " out.o";
+
+  system(asCmd.c_str());
+  system(gccCmd.c_str());
+}
+
+void compile_linux(const char *filename, std::string program)
+{
+}
+
 void compile(const char *filename)
 {
-  return;
+  std::string program;
+  if (!readProgram(filename, program))
+  {
+    std::cout << "ERROR: Invalid file " << filename << '\n';
+    return;
+  }
+
+  if (!isValid(program))
+  {
+    std::cout << "ERROR: Invalid program in file " << filename << '\n';
+    return;
+  }
+
+#ifdef _WIN32 || _WIN64
+  compile_windows(filename, program);
+#elif __linux__
+  compile_linux(filename, program);
+#endif
 }
